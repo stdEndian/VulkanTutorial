@@ -51,9 +51,10 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance,
 
 struct QueueFamilyIndices {
   std::optional<uint32_t> graphicsFamily;
+  std::optional<uint32_t> presentFamily;
 
   bool isComplete() {
-    return graphicsFamily.has_value();
+    return graphicsFamily.has_value() && presentFamily.has_value();
   }
 };
 
@@ -74,6 +75,7 @@ private:
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
   VkDevice device;
   VkQueue graphicsQueue;
+  VkQueue presentQueue;
   VkSurfaceKHR surface;
 
 
@@ -90,6 +92,7 @@ private:
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
+    createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
   }
@@ -99,21 +102,6 @@ private:
     while (!glfwWindowShouldClose(window)) {
       glfwPollEvents();
     }
-  }
-
-
-  void cleanup() {
-    vkDestroyDevice(device, nullptr);
-
-    if (enableValidationLayers) {
-      DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-    }
-
-    vkDestroyInstance(instance, nullptr);
-
-    glfwDestroyWindow(window);
-
-    glfwTerminate();
   }
 
 
@@ -173,6 +161,13 @@ private:
 
     if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
       throw std::runtime_error("Failed to set up debug messenger!");
+    }
+  }
+
+
+  void createSurface() {
+    if(glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+      throw std::runtime_error("Failed to create window surface!");
     }
   }
 
@@ -237,17 +232,22 @@ private:
 
   QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
-
+    VkBool32 presentSupport = false;
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
     int i = 0;
     for (const auto& queueFamily : queueFamilies) {
-      if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {  
         indices.graphicsFamily = i;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+      }
+
+      if(presentSupport) {
+        indices.presentFamily = i;
       }
 
       if (indices.isComplete()) {
@@ -259,6 +259,9 @@ private:
 
     return indices;
   }
+
+
+  
 
 
   std::vector<const char*> getRequiredExtensions() {
@@ -309,6 +312,23 @@ private:
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
       return VK_FALSE;
     }
+
+
+  void cleanup() {
+    vkDestroyDevice(device, nullptr);
+
+    if (enableValidationLayers) {
+      DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+    }
+
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+
+    vkDestroyInstance(instance, nullptr);
+
+    glfwDestroyWindow(window);
+
+    glfwTerminate();
+  }
 };
 
 
