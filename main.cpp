@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <vulkan/vulkan_core.h>
 #define VK_USE_PLATFORM_XLIB_XRANDR_EXT
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -13,6 +15,9 @@
 #include <cstdlib>
 #include <optional>
 #include <set>
+#include <limits>
+#include <algorithm>
+
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -88,7 +93,13 @@ private:
   VkQueue graphicsQueue;
   VkQueue presentQueue;
   VkSurfaceKHR surface;
-
+  VkSwapchainKHR swapChain;
+  std::vector<VkImage> swapChainImages;
+  std::vector<VkImage> swapChainImagesView;
+  std::vector<VkImageView> swapChainImageViews;
+  VkFormat swapChainImageFormat;
+  VkExtent2D swapChainExtent;
+ 
 
   void initWindow() {
     glfwInit();
@@ -106,6 +117,8 @@ private:
     createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
+    createSwapChain();
+    createImageViews();
   }
 
 
@@ -340,10 +353,117 @@ private:
   }
 
 
-  VkSurfaceFormatKHR chooseSwapPresentMode(const std::vector<VkSurfaceFormatKHR>& availablePresentModes) {
+  VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+    for(const auto& availablePresentMode : availablePresentModes) {
+      if(availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+	return availablePresentMode;
+      }
+    }
+
     return VK_PRESENT_MODE_FIFO_KHR;
   }
- 
+
+
+  VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+    if(capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) { return capabilities.currentExtent; }
+    else {
+      int width, height;
+      glfwGetFramebufferSize(window, &width, &height);
+
+      VkExtent2D actualExtend = {
+	static_cast<uint32_t>(width),
+	static_cast<uint32_t>(height)
+      };
+
+      actualExtend.width = std::clamp(actualExtend.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+      actualExtend.height = std::clamp(actualExtend.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    
+      return actualExtend;
+    }
+  }
+
+
+  void createSwapChain() {
+  SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+
+    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+    VkPresentModeKHR presentFormat = chooseSwapPresentMode(swapChainSupport.presentModes);
+    VkExtent2D extend = chooseSwapExtent(swapChainSupport.capabilities);
+    
+    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+
+    if(swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
+      imageCount = swapChainSupport.capabilities.maxImageCount;
+    }
+
+    VkSwapchainCreateInfoKHR swapchainInfo{};
+    swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    swapchainInfo.surface = surface;
+    swapchainInfo.minImageCount = imageCount;
+    swapchainInfo.imageFormat = surfaceFormat.format;
+    swapchainInfo.imageColorSpace = surfaceFormat.colorSpace;
+    swapchainInfo.imageExtent = extend;
+    swapchainInfo.imageArrayLayers = 1;
+    swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    uint32_t queueFamilyIndex[] = {indices.presentFamily.value(), indices.graphicsFamily.value()};
+
+    if(indices.presentFamily != indices.graphicsFamily) {
+      swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+      swapchainInfo.queueFamilyIndexCount = 2;
+      swapchainInfo.pQueueFamilyIndices = queueFamilyIndex;
+    } else {
+      swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      swapchainInfo.queueFamilyIndexCount = 0;
+      swapchainInfo.pQueueFamilyIndices = nullptr;
+    }
+
+    swapchainInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapchainInfo.presentMode = presentFormat;
+    swapchainInfo.clipped = VK_TRUE;
+    swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    if(vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &swapChain) != VK_SUCCESS) {
+      throw std::runtime_error("Failed to create Swap Chain!!!");
+    }
+
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+    swapChainImages.resize(imageCount);
+    vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+
+    swapChainImageFormat = surfaceFormat.format;
+    swapChainExtent = extend;
+  }
+
+
+  void createImageViews() {
+    swapChainImageViews.resize(swapChainImages.size());
+
+    for(size_t i = 0; i < swapChainImages.size(); i++) {
+      VkImageViewCreateInfo imageViewCreateInfo{};
+      imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+      //imageViewCreateInfo.flags = 
+      imageViewCreateInfo.image = swapChainImages[i];
+      imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      imageViewCreateInfo.format = swapChainImageFormat;
+      imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+      imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+      imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+      imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+      imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+      imageViewCreateInfo.subresourceRange.levelCount = 1;
+      imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+      imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+      if(vkCreateImageView(device, &imageViewCreateInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+	throw std::runtime_error("Failed to create image views!!!");
+      }
+    }
+  }
+
   
   std::vector<const char*> getRequiredExtensions() {
     uint32_t glfwExtensionCount = 0;
@@ -396,6 +516,12 @@ private:
 
 
   void cleanup() {
+    for(auto imageView : swapChainImageViews) {
+      vkDestroyImageView(device, imageView, nullptr);
+    }
+    
+    vkDestroySwapchainKHR(device, swapChain, nullptr);
+    
     vkDestroyDevice(device, nullptr);
 
     if (enableValidationLayers) {
