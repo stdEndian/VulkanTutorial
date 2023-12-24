@@ -1,10 +1,10 @@
-#include <cstdint>
-#include <glm/fwd.hpp>
 #define VK_USE_PLATFORM_XLIB_XRANDR_EXT
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3native.h>
+
+#include "xcb/xcb.h"
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
@@ -645,8 +645,8 @@ private:
     VkPipelineVertexInputStateCreateInfo vertexInputStateInfo{};
     vertexInputStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputStateInfo.vertexBindingDescriptionCount = 1;
-    vertexInputStateInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputStateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputStateInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputStateInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
     
     VkPipelineShaderStageCreateInfo vertShaderStage{};
@@ -692,7 +692,6 @@ private:
     multisampleInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     multisampleInfo.sampleShadingEnable = VK_FALSE;
-    //multisampleInfo.
 
     VkPipelineColorBlendAttachmentState colorBlendInfo{};
     colorBlendInfo.blendEnable = VK_FALSE;
@@ -961,7 +960,7 @@ private:
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
